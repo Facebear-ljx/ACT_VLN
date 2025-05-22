@@ -3,6 +3,7 @@
     "dataset_name": "Agilex",
     "action_key": "action",
     "proprio_key": "proprio",
+    "frequency": 30,
     "language_instruction_key": "language_instruction",
     "observation_key": [
         "observation/top_image",

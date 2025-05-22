@@ -12,6 +12,8 @@ from pathlib import Path
 import subprocess
 from accelerate import Accelerator
 
+import model.model_factory
+from config.hero_info import DOMAIN_NAME_TO_INFO
 from dataset.UniDatasets import create_dataloader
 from timm import create_model
 
@@ -25,7 +27,7 @@ def get_args_parser():
     parser.add_argument('--weight_decay', default=0.01, type=float)
     parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--metas_path', default='', type=str)
-    parser.add_argument('--precision', default='fp32', type=str)
+    parser.add_argument('--precision', default='bf16', type=str)
     
     
     parser.add_argument('--model', default='ACTAgent', type=str)
@@ -51,10 +53,11 @@ def get_args_parser():
 def main(args):
     
     output_dir = Path(args.output_dir)
-    
+    from accelerate import DistributedDataParallelKwargs
     accelerator = Accelerator(mixed_precision = args.precision,
                               log_with="wandb", 
-                              project_dir=output_dir)
+                              project_dir=output_dir,
+                              kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
     accelerator.init_trackers("ACT_Training", config=vars(args))
     torch.distributed.barrier()
     
@@ -66,13 +69,13 @@ def main(args):
         metas_path = args.metas_path,
         rank = args.rank,
         world_size = args.world_size,
-        # DOMAIN_NAME_TO_ID=DOMAIN_NAME_TO_ID,
-        num_action=model.model.num_actions,
+        DOMAIN_NAME_TO_INFO=DOMAIN_NAME_TO_INFO,
+        num_action=model.ac_num,
         im_padding=True
     )
     
     model = model.to(torch.float32)
-    optim = torch.optim.AdamW(model.parameters(), args.learning_rate, args.weight_decay, betas = (0.9, 0.95))
+    optim = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay, betas = (0.9, 0.999))
     model, optim = accelerator.prepare(model, optim)
     
     iters = 0
@@ -93,9 +96,10 @@ def main(args):
             
             #### training
             inputs = {
-                'image_obs': data['image_obs'].cuda(non_blocking=True),
+                'image_obs': data['image_input'].cuda(non_blocking=True),
                 'action': data['action'].cuda(non_blocking=True),
-                'qpos': data['proprio'].cuda(non_blocking=True)
+                'qpos': data['proprio'].cuda(non_blocking=True),
+                'is_pad': ~data['action_mask'].cuda(),
             }
             optim.zero_grad()
             loss = model(**inputs)

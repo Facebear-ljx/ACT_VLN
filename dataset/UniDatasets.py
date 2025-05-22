@@ -1,4 +1,6 @@
 
+from inspect import stack
+import stat
 from mmengine import fileio
 import io
 import h5py
@@ -38,10 +40,11 @@ class MapStyleReader(Dataset):
     def __init__(self, 
                  metas_path:str,
                  DOMAIN_NAME_TO_INFO: dict = {},
-
+                 
+                 proprio_normalization = "mean-std",
                  action_normalization = "min-max",
-                 standard_freq:int = 4,
-                 max_freq:int=50,
+                #  standard_freq:int = 4,
+                #  max_freq:int=50,
                  dim_action:int= 7
                  ):
         
@@ -49,10 +52,11 @@ class MapStyleReader(Dataset):
         self.metas = {}
         self.datalist = []
         # reading setting
-        self.max_freq = max_freq
-        self.standard_freq = standard_freq
+        # self.max_freq = max_freq
+        # self.standard_freq = standard_freq
         self.DOMAIN_NAME_TO_INFO = DOMAIN_NAME_TO_INFO
         self.action_normalization = action_normalization
+        self.proprio_normalization = proprio_normalization
         self.dim_action = dim_action
 
         self.num_views = 0
@@ -62,7 +66,7 @@ class MapStyleReader(Dataset):
                 print(f"================detect dataset {meta['dataset_name']} with traj {len(meta['datalist'])}==================")
                 self.datalist.extend([(path, meta['dataset_name'], idx) 
                      for path, traj_len in meta['datalist'] 
-                     for idx in range(0, traj_len - meta['frequency'], max(1, meta['frequency'] // self.standard_freq))
+                     for idx in range(0, traj_len - meta['frequency'])
                      ])
                 print(len(self.datalist))
                 del meta['datalist']
@@ -98,6 +102,21 @@ class MapStyleReader(Dataset):
         mask[:V_exist] = True 
 
         return {'image_input': x, 'image_mask': mask}
+
+    def read_proprio(self, data, idx, statics):
+        extracted_data = data[idx]
+        if self.proprio_normalization == 'min-max':
+            extracted_data = (extracted_data - np.array(statics['proprio_stactics']['min'])) /\
+            (np.array(statics['proprio_stactics']['max']) - np.array(statics['proprio_stactics']['min']) + 1e-6)
+            extracted_data = extracted_data * 2 - 1
+        elif self.proprio_normalization == 'mean-std':
+            extracted_data = (extracted_data - np.array(statics['proprio_stactics']['mean'])) /\
+            (np.array(statics['proprio_stactics']['std']) + 1e-6)
+        else:
+            raise NotImplementedError
+    
+        return {'proprio': extracted_data.astype(np.float32)}
+            
     
     def read_actions(self, data, idx, statics):
         traj_len = data.shape[0]
@@ -120,10 +139,10 @@ class MapStyleReader(Dataset):
             extracted_data = np.concatenate([extracted_data, np.zeros((mask.shape[0], self.dim_action - extracted_data.shape[1]))], axis=1)
 
         ## horizon padding
-        assert extracted_data.shape[0] <= self.max_freq
-        if extracted_data.shape[0] < self.max_freq:
-            mask = np.concatenate([mask, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
-            extracted_data = np.concatenate([extracted_data, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
+        # assert extracted_data.shape[0] <= self.max_freq
+        # if extracted_data.shape[0] < self.max_freq:
+            # mask = np.concatenate([mask, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
+            # extracted_data = np.concatenate([extracted_data, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
 
         return {'action': extracted_data.astype(np.float32), 'action_mask': mask.astype(np.bool_)}
 
@@ -142,7 +161,8 @@ class MapStyleReader(Dataset):
             'hetero_info': torch.tensor(self.DOMAIN_NAME_TO_INFO[dataset_name]),
             'language_instruction': ins,
             **self.read_actions(data[meta["action_key"]], idx, meta),
-            **self.read_obs([data[key] for key in meta['observation_key']], idx)
+            **self.read_obs([data[key] for key in meta['observation_key']], idx),
+            **self.read_proprio(data[meta['proprio_key']], idx, meta)
         }
         return item
 
@@ -153,8 +173,8 @@ def create_dataloader(
                  world_size:int,
                  DOMAIN_NAME_TO_INFO,
                  dim_action: int= 14,
-                 max_freq:int = 50,
-                 standard_freq: int = 5,
+                #  max_freq:int = 50,
+                #  standard_freq: int = 5,
                  action_normalization = "min-max",
                  **kwargs
                  ):
@@ -162,8 +182,8 @@ def create_dataloader(
                  metas_path = metas_path,
                  DOMAIN_NAME_TO_INFO = DOMAIN_NAME_TO_INFO,
                  action_normalization = action_normalization,
-                 max_freq = max_freq,
-                 standard_freq = standard_freq,
+                #  max_freq = max_freq,
+                #  standard_freq = standard_freq,
                  dim_action = dim_action,
                  )
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
