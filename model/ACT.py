@@ -267,13 +267,13 @@ class ACTModel(nn.Module):
               return loss_dict
 
        @torch.no_grad
-       def get_action(self, qpos: torch.Tensor, image: torch.Tensor):
+       def pred_action(self, qpos: torch.Tensor, image_obs: torch.Tensor):
               is_pad = torch.full((1, self.ac_num), False)
               # vae encode, get style latent
               latent_input, _, _ = self.latent_vae_encode(qpos, None, is_pad)
 
               # image & proprioception features
-              src_image, pos = self.encode_image(image)
+              src_image, pos = self.encode_image(image_obs)
               proprio_input = self.input_robot_state_proj(qpos) if self.s_dim > 0 else None
 
               # act main branch encoder decoder
