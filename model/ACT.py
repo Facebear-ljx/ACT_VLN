@@ -150,8 +150,8 @@ class ACTModel(nn.Module):
               is_pad: batch, seq
               """
               is_training = actions is not None # train or val
-              bs, _, _ = actions.shape
               if is_training:
+                     bs, _, _ = actions.shape
                      # project action sequence to embedding dim, and concat with a CLS token
                      action_embed = self.encoder_action_proj(actions) # (bs, seq, hidden_dim)
                      cls_embed = self.cls_embed.weight # (1, hidden_dim)
@@ -184,7 +184,7 @@ class ACTModel(nn.Module):
                      latent_input = self.latent_out_proj(latent_sample)
               else:
                      mu = logvar = None
-                     latent_sample = torch.zeros([bs, self.latent_dim], dtype=torch.float32).to(qpos.device)
+                     latent_sample = torch.zeros([1, self.latent_dim], dtype=torch.float32).to(qpos.device)  # default 1 one sample for eval
                      latent_input = self.latent_out_proj(latent_sample)
               return latent_input, mu, logvar      
        
@@ -268,19 +268,24 @@ class ACTModel(nn.Module):
 
        @torch.no_grad
        def pred_action(self, qpos: torch.Tensor, image_obs: torch.Tensor):
-              is_pad = torch.full((1, self.ac_num), False)
+              is_pad = torch.full((1, self.ac_num), False).to(image_obs.device)
               # vae encode, get style latent
               latent_input, _, _ = self.latent_vae_encode(qpos, None, is_pad)
 
               # image & proprioception features
+              image_obs = image_obs.permute(0, 2, 1, 3, 4, 5) # B, V, F, C, H, W -> B, F, V, C, H, W
               src_image, pos = self.encode_image(image_obs)
-              proprio_input = self.input_robot_state_proj(qpos) if self.s_dim > 0 else None
+              if self.s_dim > 0:
+                     qpos = qpos.squeeze(1) # B, F, C -> B, C
+                     proprio_input = self.input_robot_state_proj(qpos)
+              else:
+                     proprio_input = None
 
               # act main branch encoder decoder
               memory = self.encode(src_image, latent_input, proprio_input, pos)
               output = self.decode(memory, is_pad)
               a_hat = self.action_head(output) # 1, n_chunk, a_dim
-              return a_hat.squeeze(0).detach().cpu().numpy()
+              return a_hat
 
 
 if __name__ == '__main__':

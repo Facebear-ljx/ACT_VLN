@@ -128,6 +128,9 @@ class MapStyleReader(Dataset):
             extracted_data = (extracted_data - np.array(statics['action_statics']['min'])[None,]) /\
             (np.array(statics['action_statics']['max'])[None,] - np.array(statics['action_statics']['min'])[None,] + 1e-6)
             extracted_data = extracted_data * 2 - 1
+        elif self.action_normalization == 'mean-std':
+            extracted_data = (extracted_data - np.array(statics['action_statics']['mean'])[None,]) /\
+            (np.array(statics['action_statics']['std'])[None,] + 1e-6)            
         else: raise NotImplementedError
 
         ## action padding

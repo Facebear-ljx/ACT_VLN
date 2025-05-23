@@ -1,6 +1,4 @@
 import model.model_factory
-import FlowerModel.Flower
-import FlowerModel.Flower_align
 from model.model_factory import DOMAIN_NAME_TO_ID
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
@@ -193,7 +191,7 @@ class ModelDeploy:
         inputs = {
             'image_obs': torch.stack([self.image_transform(img).unsqueeze(0) for img in image_obs]).unsqueeze(0).to(self.device),
         }
-        if proprio is not None and self.proprio_predefined_length > 0:
+        if proprio is not None:
             if do_proprio_normalize:
                 if self.proprio_normalization == 'mean-std':
                     proprio = (proprio - np.array(statics['proprio_stactics']['mean'])[None,]) / (np.array(statics['proprio_stactics']['std'])[None,] + 1e-6)
