@@ -16,7 +16,8 @@ from einops import repeat, rearrange
 from typing import Callable, Optional, Union, Tuple, List, Any
 
 from model.components.image_encoder import ImageEncoderWithSinePosition
-
+from model.components.act_transformer import TransformerEncoderLayer, TransformerDecoderLayer, TransformerEncoder, TransformerDecoder
+from utils.count_parameter import count_parameters
 
 def kl_divergence(mu, logvar):
     batch_size = mu.size(0)
@@ -90,33 +91,37 @@ class ACTModel(nn.Module):
               
               # vae transformer encoder
               self.ac_num = ac_num
-              self.vae_encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim,
+              self.vae_encoder_layer = TransformerEncoderLayer(d_model=hidden_dim,
                                                                   nhead=nheads,
                                                                   dim_feedforward=dim_feedforward,
                                                                   dropout=dropout,
                                                                   batch_first=True)
-              self.vae_encoder = nn.TransformerEncoder(self.vae_encoder_layer, num_layers=num_encoder_layers)
+              self.vae_encoder = TransformerEncoder(self.vae_encoder_layer, num_layers=num_encoder_layers)
+              del self.vae_encoder_layer
 
               # cnn backbone
-              self.cnn_encoder = ImageEncoderWithSinePosition(pretrained=False,
-                                                              num_pos_feats=256)
+              # self.cnn_encoder = nn.ModuleList([ImageEncoderWithSinePosition(pretrained=True,
+                                                        #       num_pos_feats=256) for _ in range(3)]) # default 3 view
+              self.cnn_encoder = ImageEncoderWithSinePosition(pretrained=True, num_pos_feats=256)
               
               
               # act encoder
-              self.act_encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim,
+              self.act_encoder_layer = TransformerEncoderLayer(d_model=hidden_dim,
                                                                   nhead=nheads,
                                                                   dim_feedforward=dim_feedforward,
                                                                   dropout=dropout,
                                                                   batch_first=True)
-              self.act_encoder = nn.TransformerEncoder(self.act_encoder_layer, num_layers=num_encoder_layers)
+              self.act_encoder = TransformerEncoder(self.act_encoder_layer, num_layers=num_encoder_layers)
+              del self.act_encoder_layer
               
               # act decoder
-              self.act_decoder_layer = nn.TransformerDecoderLayer(d_model=hidden_dim,
+              self.act_decoder_layer = TransformerDecoderLayer(d_model=hidden_dim,
                                                                   nhead=nheads,
                                                                   dim_feedforward=dim_feedforward,
                                                                   dropout=dropout,
                                                                   batch_first=True)
-              self.act_decoder = nn.TransformerDecoder(self.act_decoder_layer, num_layers=num_decoder_layers)
+              self.act_decoder = TransformerDecoder(self.act_decoder_layer, num_layers=num_decoder_layers)
+              del self.act_decoder_layer
               
               # vae encoder extra parameters
               self.s_dim = s_dim
@@ -131,6 +136,7 @@ class ACTModel(nn.Module):
               self.register_buffer('pos_table', get_sinusoid_encoding_table(encode_token_num, hidden_dim))
               
               # act encoder extra parameters
+              # self.input_image_proj = nn.Conv2d(self.cnn_encoder[0].output_dim, hidden_dim, kernel_size=1) # project image feature to embedding
               self.input_image_proj = nn.Conv2d(self.cnn_encoder.output_dim, hidden_dim, kernel_size=1) # project image feature to embedding
               self.input_robot_state_proj = nn.Linear(output_dim, hidden_dim) # project qpos to embedding
               self.latent_out_proj = nn.Linear(self.latent_dim, hidden_dim) # project latent sample to embedding
@@ -141,6 +147,8 @@ class ACTModel(nn.Module):
               self.action_head = nn.Linear(hidden_dim, output_dim)
               # self.is_pad_head = nn.Linear(hidden_dim, 1)
               self.query_embed = nn.Embedding(ac_num, hidden_dim)
+              # self.register_buffer('pos_table_decoder', get_sinusoid_encoding_table(ac_num, hidden_dim))
+
        
        def latent_vae_encode(self, qpos: torch.Tensor, actions=None, is_pad=None):
               """
@@ -174,8 +182,8 @@ class ACTModel(nn.Module):
                      pos_embed = self.pos_table.clone().detach().repeat(bs, 1, 1) # (bs, seq+1+1, hidden_dim)
                      
                      # query model
-                     encoder_input = encoder_input + pos_embed  # only add pos_embedding before atten, not exactly the same as original ACT model
-                     encoder_output = self.vae_encoder(encoder_input, src_key_padding_mask=is_pad)
+                     # encoder_input = encoder_input + pos_embed  # only add pos_embedding before atten, not exactly the same as original ACT model
+                     encoder_output = self.vae_encoder(encoder_input, src_key_padding_mask=is_pad, pos=pos_embed)
                      encoder_output = encoder_output[:, 0] # take cls output only
                      latent_info = self.latent_proj(encoder_output)
                      mu = latent_info[:, :self.latent_dim]
@@ -193,10 +201,12 @@ class ACTModel(nn.Module):
               # Image observation features and position embeddings
               B, F, V, C, H, W = image.shape
               image = image.view(B*F*V, C, H, W)
+              image_features, pos = self.cnn_encoder(image)
+              # image = image.view(B*F, V, C, H, W)
               # image_features = []
               # for i in range(V):
-              image_features, pos = self.cnn_encoder(image)
-                     # image_features.append(image_feature.unsqueeze(1))
+              #        image_feature, pos = self.cnn_encoder[i](image[:, i, :, :, :])
+              #        image_features.append(image_feature.unsqueeze(1))
               
               # image_features = torch.cat(image_features, dim=1)  # B*F, V, C, H, W
               # BF, _, C, H, W = image_features.shape
@@ -222,15 +232,17 @@ class ACTModel(nn.Module):
               addition_input = torch.stack([latent_input, proprio_input], axis=1) if proprio_input is not None else latent_input.unsqueeze(1)
               src = torch.cat([addition_input, src], axis=1)
               
-              src = src + pos_embed
-              memory = self.act_encoder(src)
-              return memory
+              # src = src + pos_embed
+              memory = self.act_encoder(src, pos=pos_embed)
+              return memory, pos_embed
 
-       def decode(self, memory, padding_mask):
+       def decode(self, memory, pos_memory, padding_mask):
               bs, _, _ = memory.shape
               query_embed = self.query_embed.weight  # n_chunk, dim
-              query_embed = query_embed.unsqueeze(0).repeat(bs, 1, 1)  # n_chunk, dim -> 1, n_chunk, dim -> bs, n_chunk, dim
-              output = self.act_decoder(query_embed, memory, tgt_key_padding_mask=padding_mask)
+              tgt = torch.zeros_like(query_embed).unsqueeze(0).repeat(bs, 1, 1)
+              # query_embed = query_embed.unsqueeze(0).repeat(bs, 1, 1)  # n_chunk, dim -> 1, n_chunk, dim -> bs, n_chunk, dim
+              # pos_decoder =  self.pos_table_decoder.clone().detach().repeat(bs, 1, 1) # (bs, seq+1+1, hidden_dim)
+              output = self.act_decoder(tgt, memory, tgt_key_padding_mask=padding_mask, pos=pos_memory, query_pos=query_embed.unsqueeze(0))
               return output
        
        
@@ -247,8 +259,8 @@ class ACTModel(nn.Module):
               proprio_input = self.input_robot_state_proj(qpos) if self.s_dim > 0 else None
 
               # act main branch encoder decoder
-              memory = self.encode(src_image, latent_input, proprio_input, pos)
-              output = self.decode(memory, is_pad_atten)
+              memory, pos_embed = self.encode(src_image, latent_input, proprio_input, pos)
+              output = self.decode(memory, pos_embed, is_pad_atten)
               a_hat = self.action_head(output)
               
               # loss
@@ -256,8 +268,7 @@ class ACTModel(nn.Module):
               kl_loss = self.kl_weight * total_kld[0]
               
               recons_loss = self.loss_fn(action, a_hat)
-              recons_loss = recons_loss.masked_fill(is_pad, 0)
-              recons_loss = recons_loss.sum(dim=1) / (~is_pad).sum(dim=1).float()
+              recons_loss = recons_loss * (~is_pad)
               recons_loss = recons_loss.mean()
               
               loss = recons_loss + kl_loss
@@ -295,7 +306,7 @@ if __name__ == '__main__':
        example_action = torch.ones((8, 30, 14))
        is_pad = torch.full((8, 30, 14), False)
        
-       
+       print(count_parameters(model, fmt='.4f'))
        optim = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=0.001, betas = (0.9, 0.95))
        optim.zero_grad()
        loss = model(example_input_qpos, example_input_image, example_action, is_pad)

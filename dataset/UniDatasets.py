@@ -44,7 +44,7 @@ class MapStyleReader(Dataset):
                  proprio_normalization = "mean-std",
                  action_normalization = "min-max",
                 #  standard_freq:int = 4,
-                #  max_freq:int=50,
+                 max_freq:int=30,
                  dim_action:int= 7
                  ):
         
@@ -52,7 +52,7 @@ class MapStyleReader(Dataset):
         self.metas = {}
         self.datalist = []
         # reading setting
-        # self.max_freq = max_freq
+        self.max_freq = max_freq
         # self.standard_freq = standard_freq
         self.DOMAIN_NAME_TO_INFO = DOMAIN_NAME_TO_INFO
         self.action_normalization = action_normalization
@@ -66,7 +66,7 @@ class MapStyleReader(Dataset):
                 print(f"================detect dataset {meta['dataset_name']} with traj {len(meta['datalist'])}==================")
                 self.datalist.extend([(path, meta['dataset_name'], idx) 
                      for path, traj_len in meta['datalist'] 
-                     for idx in range(0, traj_len - meta['frequency'])
+                     for idx in range(0, traj_len)
                      ])
                 print(len(self.datalist))
                 del meta['datalist']
@@ -142,10 +142,10 @@ class MapStyleReader(Dataset):
             extracted_data = np.concatenate([extracted_data, np.zeros((mask.shape[0], self.dim_action - extracted_data.shape[1]))], axis=1)
 
         ## horizon padding
-        # assert extracted_data.shape[0] <= self.max_freq
-        # if extracted_data.shape[0] < self.max_freq:
-            # mask = np.concatenate([mask, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
-            # extracted_data = np.concatenate([extracted_data, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
+        assert extracted_data.shape[0] <= self.max_freq
+        if extracted_data.shape[0] < self.max_freq:
+            mask = np.concatenate([mask, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
+            extracted_data = np.concatenate([extracted_data, np.zeros((self.max_freq - extracted_data.shape[0], self.dim_action))])
 
         return {'action': extracted_data.astype(np.float32), 'action_mask': mask.astype(np.bool_)}
 
@@ -176,7 +176,7 @@ def create_dataloader(
                  world_size:int,
                  DOMAIN_NAME_TO_INFO,
                  dim_action: int= 14,
-                #  max_freq:int = 50,
+                 max_freq:int = 30,
                 #  standard_freq: int = 5,
                  action_normalization = "min-max",
                  **kwargs
@@ -185,7 +185,7 @@ def create_dataloader(
                  metas_path = metas_path,
                  DOMAIN_NAME_TO_INFO = DOMAIN_NAME_TO_INFO,
                  action_normalization = action_normalization,
-                #  max_freq = max_freq,
+                 max_freq = max_freq,
                 #  standard_freq = standard_freq,
                  dim_action = dim_action,
                  )

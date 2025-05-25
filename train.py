@@ -16,6 +16,7 @@ import model.model_factory
 from config.hero_info import DOMAIN_NAME_TO_INFO
 from dataset.UniDatasets import create_dataloader
 from timm import create_model
+from utils.count_parameter import count_parameters
 
 
 def get_args_parser():
@@ -25,13 +26,14 @@ def get_args_parser():
     parser.add_argument('--batch-size', default=16, type=int)
     parser.add_argument('--learning_rate', default=1e-4, type=float)
     parser.add_argument('--weight_decay', default=0.01, type=float)
+    parser.add_argument('--action_norm', default='min-max', type=str)
     parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--metas_path', default='', type=str)
     parser.add_argument('--precision', default='bf16', type=str)
     
     
     parser.add_argument('--model', default='ACTAgent', type=str)
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--seed', default=1000, type=int)
     
     # Resume & Checkpoint Save & evaluation parameters
     parser.add_argument('--save_interval', default=20000, type=int)
@@ -56,8 +58,8 @@ def main(args):
     from accelerate import DistributedDataParallelKwargs
     accelerator = Accelerator(mixed_precision = args.precision,
                               log_with="wandb", 
-                              project_dir=output_dir,
-                              kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
+                              project_dir=output_dir)
+                            #   kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
     accelerator.init_trackers("ACT_Training", config=vars(args))
     torch.distributed.barrier()
     
@@ -70,6 +72,7 @@ def main(args):
         rank = args.rank,
         world_size = args.world_size,
         DOMAIN_NAME_TO_INFO=DOMAIN_NAME_TO_INFO,
+        action_normalization=args.action_norm,
         num_action=model.ac_num,
         im_padding=True
     )
@@ -77,6 +80,7 @@ def main(args):
     model = model.to(torch.float32)
     optim = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay, betas = (0.9, 0.999))
     model, optim = accelerator.prepare(model, optim)
+    print(count_parameters(model, unit='M', fmt='.4f'))
     
     iters = 0
     if args.resume is not None:

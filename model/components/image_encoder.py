@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import math
 from torchvision.models import resnet18
+from torchvision.ops.misc import FrozenBatchNorm2d
 
 class PositionEmbeddingSine(nn.Module):
     def __init__(self, num_pos_feats=256, temperature=10000, normalize=False, scale=None):
@@ -43,6 +44,7 @@ class ImageEncoderWithSinePosition(nn.Module):
                  num_pos_feats=256):
         super().__init__()
         self.backbone = resnet18(pretrained=pretrained)
+        self.backbone = replace_bn_with_frozen(self.backbone)
         self.output_dim = self.backbone.fc.in_features
         del self.backbone.avgpool
         del self.backbone.fc
@@ -75,6 +77,22 @@ class ImageEncoderWithSinePosition(nn.Module):
         pos_embedding = self.position_embedder(features)
         
         return features, pos_embedding
+
+
+def replace_bn_with_frozen(model):
+    for name, module in model.named_children():
+        if isinstance(module, nn.BatchNorm2d):
+            frozen_bn = FrozenBatchNorm2d(
+                num_features=module.num_features,
+                eps=module.eps
+            )
+            
+            frozen_bn.load_state_dict(module.state_dict())
+            
+            setattr(model, name, frozen_bn)
+        else:
+            replace_bn_with_frozen(module)
+    return model
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 {
-    "top_path": "/mnt/ssd0/data/agilex/processed",
+    "top_path": "/home/ljx/agilex/processed",
     "dataset_name": "Agilex",
     "action_key": "action",
     "proprio_key": "proprio",
