@@ -171,7 +171,7 @@ class ModelDeploy:
         self.image_transform = transforms.Compose([
             transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC),
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225), inplace=True)
         ])
         
         print("current support domains:", DOMAIN_NAME_TO_ID.keys())
@@ -208,6 +208,8 @@ class ModelDeploy:
                 action_pred = (action_pred + 1) / 2
                 action_pred = action_pred * (np.array(statics['action_statics']['max'])[None,] - np.array(statics['action_statics']['min'])[None,] + 1e-6) + \
                                 np.array(statics['action_statics']['min'])[None,]
+            elif self.action_normalization == 'mean-std':
+                action_pred = action_pred * (np.array(statics['action_statics']['std'])[None,] +1e-6) + np.array(statics['action_statics']['mean'])[None,]
             else: raise NotImplementedError
         
         return action_pred

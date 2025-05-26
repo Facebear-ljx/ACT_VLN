@@ -12,6 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description='single-process evaluation on Agilex robot')
     parser.add_argument('--ckpt_path', default='/home/ljx/ljx/BearRL/exp/20250522/Agilex/ckpt-3600/', type=str, help='load ckpt path')
     parser.add_argument('--model_name', default='ACTAgent', type=str, help='create model name')
+    parser.add_argument('--action_norm', default='mean-std', help='min-max or mean-std, action denormalize method')
+    parser.add_argument('--qpos_norm', default='mean-std', help='min-max or mean-std, qpos denormalize method')
     parser.add_argument("--host", default='0.0.0.0', help="Your client host ip")
     parser.add_argument("--port", default=8000, type=int, help="Your client port")
     args = parser.parse_args()
@@ -28,6 +30,8 @@ def main():
         ckpt_path = ckpt_path,
         model_name = kwargs['model_name'],
         device = torch.device("cuda"),
+        action_normalization=kwargs['action_norm'],
+        proprio_normalization=kwargs['qpos_norm']
     )
     
     # wrap the deploymodel as a server

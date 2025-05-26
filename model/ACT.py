@@ -293,8 +293,8 @@ class ACTModel(nn.Module):
                      proprio_input = None
 
               # act main branch encoder decoder
-              memory = self.encode(src_image, latent_input, proprio_input, pos)
-              output = self.decode(memory, is_pad)
+              memory, pos_embed = self.encode(src_image, latent_input, proprio_input, pos)
+              output = self.decode(memory, pos_embed, is_pad)
               a_hat = self.action_head(output) # 1, n_chunk, a_dim
               return a_hat
 
