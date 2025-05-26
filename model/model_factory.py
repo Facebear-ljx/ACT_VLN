@@ -1,5 +1,5 @@
 from timm.models import register_model
-from model.ACT import ACTModel
+from model.policy.ACT import ACTModel
 
 
 DOMAIN_NAME_TO_ID = {
