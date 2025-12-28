@@ -143,6 +143,44 @@ STATICS = {
             0.01728242263197899
         ]
         },
+    },
+    "VLN": {
+        "action_statics": {
+            "min": [
+                -0.003000000026077032,
+                -0.6869999766349792
+            ],
+            "max": [
+                1.3498711585998535,
+                0.45735546946525574
+            ],
+            "mean": [
+                0.6300999522209167,
+                -0.05133406072854996
+            ],
+            "std": [
+                0.23964384198188782,
+                0.16825756430625916
+            ]
+        },
+        "proprio_stactics": {
+            "min": [
+                -0.003000000026077032,
+                -0.6869999766349792
+            ],
+            "max": [
+                1.3498711585998535,
+                0.45735546946525574
+            ],
+            "mean": [
+                0.6300999522209167,
+                -0.05133406072854996
+            ],
+            "std": [
+                0.23964384198188782,
+                0.16825756430625916
+            ]
+        },
     }
 }
 
@@ -163,7 +201,7 @@ class ModelDeploy:
         self.proprio_normalization = proprio_normalization
         self.action_normalization = action_normalization
         
-        loaded_data = load_file(ckpt_path)
+        loaded_data = load_file(ckpt_path, device="cpu")
         print(self.model.load_state_dict(loaded_data))
         
         self.device = device
@@ -180,7 +218,7 @@ class ModelDeploy:
     def infer(self,
               image_obs, # List[Image]
               proprio: np.ndarray = None, # F C 
-              domain_name:str = "Agilex",      
+              domain_name:str = "VLN",      
               
               do_action_denormalize = True,
               do_proprio_normalize = True,         
