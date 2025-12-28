@@ -15,7 +15,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', type=str)
     parser.add_argument('--action_key', type=str)
     parser.add_argument('--proprio_key', type=str)
-    parser.add_argument('--language_instruction_key', type=str)
+    # parser.add_argument('--language_instruction_key', type=str)
     parser.add_argument('--observation_key', nargs='+', type=str)
     
     parser.add_argument('--save_path', type=str)
@@ -29,7 +29,7 @@ if __name__ == '__main__':
         'dataset_name': args.dataset_name,
         'action_key': args.action_key,
         'proprio_key': args.proprio_key,
-        'language_instruction_key': args.language_instruction_key,
+        # 'language_instruction_key': args.language_instruction_key,
         'observation_key': args.observation_key,
         'action_statics':{},
         'proprio_stactics':{},
@@ -54,7 +54,7 @@ if __name__ == '__main__':
             f"Errors of data structure in {args.dataset_name}-{path}"
             
             
-            print("languague-test:", data["language_instruction"][()].decode())
+            # print("languague-test:", data["language_instruction"][()].decode())
             flag = True
             
         all_action.append(data[args.action_key])

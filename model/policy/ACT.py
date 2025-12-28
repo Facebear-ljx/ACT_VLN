@@ -58,7 +58,7 @@ class ACTModel(nn.Module):
               output_dim: int=14,  # a dim
               ac_num: int=30,
               # nums_view: int=3,
-              s_dim: int=14,  # qpos_dim
+              s_dim: int=0,  # qpos_dim
               hidden_dim: int=512,
               dim_feedforward: int=3200,
               nheads: int=8,
@@ -138,7 +138,8 @@ class ACTModel(nn.Module):
               # act encoder extra parameters
               # self.input_image_proj = nn.Conv2d(self.cnn_encoder[0].output_dim, hidden_dim, kernel_size=1) # project image feature to embedding
               self.input_image_proj = nn.Conv2d(self.cnn_encoder.output_dim, hidden_dim, kernel_size=1) # project image feature to embedding
-              self.input_robot_state_proj = nn.Linear(output_dim, hidden_dim) # project qpos to embedding
+              if self.s_dim > 0:
+                     self.input_robot_state_proj = nn.Linear(output_dim, hidden_dim)# project qpos to embedding
               self.latent_out_proj = nn.Linear(self.latent_dim, hidden_dim) # project latent sample to embedding
               additional_pos_embed_num = 2 if s_dim > 0 else 1 # cam1, cam2, cam3, qpos, [CLS]
               self.additional_pos_embed = nn.Embedding(additional_pos_embed_num, hidden_dim) # learned position embedding for proprio and latent      
@@ -301,7 +302,7 @@ class ACTModel(nn.Module):
 
 if __name__ == '__main__':
        model = ACTModel()
-       example_input_image = torch.ones((8, 3, 1, 3, 224, 224))
+       example_input_image = torch.ones((8, 1, 1, 3, 224, 224))
        example_input_qpos = torch.ones((8, 14))
        example_action = torch.ones((8, 30, 14))
        is_pad = torch.full((8, 30, 14), False)

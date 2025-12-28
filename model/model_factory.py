@@ -30,3 +30,37 @@ def ACTAgent(**kwargs):
         kl_weight = 10,
     )
     return model
+
+@register_model
+def ACT_VLNAgent(**kwargs):
+    model = ACTModel(
+        output_dim = 2,
+        ac_num = 10,
+        nums_view = 1,
+        s_dim = 0,
+        hidden_dim = 512,
+        dim_feedforward = 3200,
+        nheads = 8,
+        dropout = 0.1,
+        num_encoder_layers = 4,
+        num_decoder_layers = 1,
+        kl_weight = 10,
+    )
+    return model
+
+@register_model
+def ACT_VLNAgent_v(**kwargs):
+    model = ACTModel(
+        output_dim = 2,
+        ac_num = 10,
+        nums_view = 1,
+        s_dim = 2,
+        hidden_dim = 512,
+        dim_feedforward = 3200,
+        nheads = 8,
+        dropout = 0.1,
+        num_encoder_layers = 4,
+        num_decoder_layers = 1,
+        kl_weight = 10,
+    )
+    return model
