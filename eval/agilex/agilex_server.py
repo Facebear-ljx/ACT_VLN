@@ -10,8 +10,8 @@ from PIL import Image
 
 def main():
     parser = argparse.ArgumentParser(description='single-process evaluation on Agilex robot')
-    parser.add_argument('--ckpt_path', default='/home/ljx/ljx/BearRL/exp/20250522/Agilex/ckpt-3600/', type=str, help='load ckpt path')
-    parser.add_argument('--model_name', default='ACTAgent', type=str, help='create model name')
+    parser.add_argument('--ckpt_path', default='/home/agilex/ljx/ACT_VLN/exp/20251227/vln_200succ_v_map_resample/ckpt-130000', type=str, help='load ckpt path')
+    parser.add_argument('--model_name', default='ACT_VLNAgent_v', type=str, help='create model name')
     parser.add_argument('--action_norm', default='mean-std', help='min-max or mean-std, action denormalize method')
     parser.add_argument('--qpos_norm', default='mean-std', help='min-max or mean-std, qpos denormalize method')
     parser.add_argument("--host", default='0.0.0.0', help="Your client host ip")
