@@ -172,7 +172,7 @@ class MapStyleReader(Dataset):
         return {'proprio': extracted_data.astype(np.float32)}
             
     
-    def read_actions(self, data, times, idx, statics):
+    def read_actions(self, data, idx, statics):
         ## read actions
         T, D = data.shape
         # action_left = data[:, :int(D/2)]
@@ -187,7 +187,7 @@ class MapStyleReader(Dataset):
         # extracted_data = data[idx:min(self.traj_len, end_idx)]
         
         
-        end_idx = idx + 10
+        end_idx = idx + self.action_sequence_length
         extracted_data = data[idx:min(T, end_idx)]
         
         if self.action_normalization == 'min-max':
@@ -292,31 +292,139 @@ class MapStyleReader(Dataset):
     def drop_old_buffer(self, keep_num):
         self.datalist = self.datalist[-keep_num:]
 
+    def read_cost(self, data, idx, traj_len):
+        """
+        Step-level cost derived from episode-level label.
+
+        episode_label semantics:
+            1 -> good / safe episode
+            0 -> bad / unsafe episode (only terminal step unsafe)
+
+        Returns:
+            dict with key 'cost', float32 scalar
+        """
+        # default: safe
+        cost, feasi = 0, -1
+        episode_label = int(data['episode_label'][()])
+        
+        if episode_label == 0:
+            # only terminal step is unsafe
+            if idx >= traj_len - 10:
+                feasi = 1.0
+                cost = 1
+
+        return {'cost': np.array(cost, dtype=np.float32),
+                'feasibility': np.array(feasi, dtype=np.float32)}
+        
+    def read_reward(self, data, idx, meta,
+                    w_linear: float = 1.0,
+                    # w_angular: float = 0.2,
+                    max_reward: float = 1.0):
+        """
+        Reward for high-speed motion.
+
+        Reward definition:
+            r = w_linear * |v| - w_angular * |omega|
+
+        Args:
+            data: hdf5 file handle
+            idx: timestep index
+            meta: dataset meta (contains proprio_key, statics, etc.)
+            w_linear: weight for linear velocity
+            w_angular: penalty weight for angular velocity
+            max_reward: clip reward to [-max_reward, max_reward]
+
+        Returns:
+            dict with key 'reward', float32 scalar
+        """
+        # read base velocity at current step
+        base_vel = data[meta['proprio_key']][idx]
+        linear_v = float(base_vel[0])
+        angular_v = float(base_vel[1])
+
+        # core reward
+        reward = w_linear * abs(linear_v) #- w_angular * abs(angular_v)
+
+        # clip for stability
+        reward = np.clip(reward, 0, max_reward)
+
+        return {'reward': np.array(reward, dtype=np.float32)}
+    
+    def read_chunk_reward(self, data, idx, meta, gamma=0.99):
+        """
+        Chunk-level discounted reward:
+            R = sum_{k=0}^{n-1} gamma^k * r_{idx+k}
+
+        where n = min(self.frequency, traj_len - idx)
+        """
+        end_idx = min(idx + self.frequency, self.traj_len)
+
+        reward_sum = 0.0
+        discount = 1.0
+
+        for t in range(idx, end_idx):
+            base_vel = data[meta['action_key']][t]
+            linear_v = float(base_vel[0])
+
+            # step reward: encourage high speed
+            r = abs(linear_v)
+
+            reward_sum += discount * r
+            discount *= gamma
+
+        return {
+            'reward': np.array(reward_sum, dtype=np.float32) / self.frequency
+        }
+        
+    def read_chunk_cost(self, data, idx, traj_len):
+        """
+        Chunk-level cost = whether this action chunk contains an unsafe step.
+        """
+        end_idx = min(idx + self.frequency, traj_len)
+
+        episode_label = int(data['episode_label'][()])
+
+        cost = 0.0
+        feasi = -1.0
+
+        if episode_label == 0:
+            # unsafe episode → only terminal step unsafe
+            terminal_t = traj_len - 1
+            if idx <= terminal_t < end_idx:
+                cost = 1.0
+                feasi = 25.0
+
+        return {
+            'cost': np.array(cost, dtype=np.float32),
+            'feasibility': np.array(feasi, dtype=np.float32)
+        }
+
+
     def __getitem__(self, index):
         path, dataset_name, idx = self.datalist[index]
         meta = self.metas[dataset_name]
         f = io.BytesIO(fileio.get(fileio.join_path(meta["top_path"], path)))
         data = h5py.File(f,'r')
-            
-        # ins = data[meta["language_instruction_key"]][()] if len(data[meta["language_instruction_key"]].shape) == 0 else \
-            # data[meta["language_instruction_key"]][idx]
-        # ins = ins.decode()
         
         self.traj_len = data[meta["action_key"]].shape[0]
         self.frequency = meta['frequency'] if self.action_sequence_length == 0 else self.action_sequence_length
-                
+        episode_label = int(data['episode_label'][()])
+        # print("!!!!!:", self.frequency)
+        
         # next done
-        if idx + self.frequency >= self.traj_len:
+        if idx + 10 >= self.traj_len and episode_label == 0:
             next_done = 1
         else:
             next_done = 0
 
         item =  {
-            # 'hetero_info': torch.tensor(self.DOMAIN_NAME_TO_INFO[dataset_name]),
-            # 'language_instruction': ins,
-            **self.read_actions(data[meta["action_key"]], data['/time_stamp'], idx, meta),
+            **self.read_actions(data[meta["action_key"]], idx, meta),
             **self.read_obs([data[key] for key in meta['observation_key']], idx),
             **self.read_proprio(data[meta['proprio_key']], idx, meta),
+            **self.read_cost(data, idx, self.traj_len),
+            **self.read_chunk_reward(data, idx, meta),
+            **self.read_next_obs([data[key] for key in meta['observation_key']], idx),
+            **self.read_next_proprio(data[meta['proprio_key']], idx, meta),
             'next_done': next_done
         } 
             

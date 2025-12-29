@@ -5,4 +5,4 @@ python HDF5Scanner.py \
     --action_key base_action \
     --proprio_key base_action \
     --observation_key 'observations/images/cam_high' \
-    --save_path /home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_succ \
+    --save_path /home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_mixed_1229 \
