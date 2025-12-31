@@ -56,8 +56,12 @@ if __name__ == '__main__':
             
             # print("languague-test:", data["language_instruction"][()].decode())
             flag = True
-            
-        all_action.append(data[args.action_key])
+
+        try:
+            all_action.append(data[args.action_key])
+        except:
+            print(path)
+            break
         all_proprio.append(data[args.proprio_key])
         metas['datalist'].append((path, len(data[args.action_key])))
     

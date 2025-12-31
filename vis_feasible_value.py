@@ -310,32 +310,35 @@ def process_one_episode(
 # ============================================================
 
 def main():
-    data_root = "/home/dodo/ljx/vln_data/run_in_the_circle_self_generate_1229"
-    metas_path = "/home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_mixed_1229"
-    ckpt_dir = "/home/dodo/ljx/AIR3L/exp/20251228/iql_vln_feasible_expectile09/ckpt-110000"
-    exp_name = "1229_expectile_0.9"
-    
-    out_root = Path("viz_path_all")
-    task_name = Path(data_root).name
-    ckpt_name = Path(ckpt_dir).name
+    for data_root in ['/home/dodo/ljx/vln_data/run_in_the_circle_self_generate', \
+                    "/home/dodo/ljx/vln_data/run_circle_in_air", \
+                    "/home/dodo/ljx/vln_data/run_circle_in_air_suboptimal", \
+                    "/home/dodo/ljx/vln_data/run_in_the_circle_self_generate_1229"]:
+        metas_path = "/home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_mixed_1229_450"
+        ckpt_dir = "/home/dodo/ljx/AIR3L/exp/20251231/iql_expectile09_vln_mixed_1229_450/ckpt-10000"
+        exp_name = "iql_expectile09_vln_mixed_1231_450_25offset"
+        
+        out_root = Path("viz_path_all")
+        task_name = Path(data_root).name
+        ckpt_name = Path(ckpt_dir).name
 
-    metas = load_all_metas(metas_path)
-    accelerator, qh, vh = load_models(ckpt_dir)
+        metas = load_all_metas(metas_path)
+        accelerator, qh, vh = load_models(ckpt_dir)
 
-    for ep in sorted(Path(data_root).rglob("*.hdf5")):
-        process_one_episode(
-            str(ep),
-            data_root,
-            out_root,
-            exp_name,
-            ckpt_name,
-            task_name,
-            metas,
-            accelerator,
-            qh,
-            vh,
-            fps=10,
-        )
+        for ep in sorted(Path(data_root).rglob("*.hdf5")):
+            process_one_episode(
+                str(ep),
+                data_root,
+                out_root,
+                exp_name,
+                ckpt_name,
+                task_name,
+                metas,
+                accelerator,
+                qh,
+                vh,
+                fps=10,
+            )
 
 
 if __name__ == "__main__":
