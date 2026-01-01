@@ -52,6 +52,8 @@ class MapStyleReader(Dataset):
                  blind_mode: bool = False,
                  codebook_metas_path: str = '',
                  clip_ending: bool = False,
+                 qh_key: str = 'qh_mean_values',
+                 vh_key: str = 'vh_values',
                 #  dim_action:int= 7
                  ):
         
@@ -70,6 +72,8 @@ class MapStyleReader(Dataset):
         self.use_codebook_norm = True if codebook_metas_path else False
         self.codebook_meta = None
         self.clip_ending = clip_ending
+        self.qh_key = qh_key
+        self.vh_key = vh_key
         # self.dim_action = dim_action
         if self.clip_ending:
             print(f"=============Clip Ending for last seq================")
@@ -216,6 +220,79 @@ class MapStyleReader(Dataset):
             
         return {'action': extracted_data.astype(np.float32), 'action_mask': mask.astype(np.bool_)}
     
+    def read_qh(self, data, idx):
+        """
+        读取QH值chunk, 和read_actions类似但不需要normalization
+        
+        Args:
+            data: QH数据数组, 形状为 (T,) 或 (T, 1)
+            idx: 起始索引
+            
+        Returns:
+            dict: 包含'qh'和'qh_mask'的字典
+        """
+        # 确保data是2D数组
+        if len(data.shape) == 1:
+            # print(f"Data shape before reshaping: {data.shape}")  # Debug print
+            data = data[:, None]  # (T,) -> (T, 1)
+        
+        T = data.shape[0]
+        
+        # 提取chunk
+        end_idx = idx + self.action_sequence_length
+        extracted_data = data[idx:min(T, end_idx)]
+        
+        # 创建mask
+        mask = np.ones_like(extracted_data)
+        
+        # horizon padding
+        if extracted_data.shape[0] < self.frequency:
+            mask = np.concatenate([mask, np.zeros((self.frequency - extracted_data.shape[0], extracted_data.shape[1]))])
+            if not self.repeat_padding:
+                # 零填充
+                extracted_data = np.concatenate([extracted_data, np.zeros((self.frequency - extracted_data.shape[0], extracted_data.shape[1]))])
+            else:
+                # 重复最后一个值
+                extracted_data = np.concatenate([extracted_data, np.tile(extracted_data[-1:], (self.frequency - extracted_data.shape[0], 1))])
+        
+        return {'qh': extracted_data.astype(np.float32), 'qh_mask': mask.astype(np.bool_)}
+    
+    def read_vh(self, data, idx):
+        """
+        读取VH值chunk，和read_actions类似但不需要normalization
+        
+        Args:
+            data: VH数据数组，形状为 (T,) 或 (T, 1)
+            idx: 起始索引
+            
+        Returns:
+            dict: 包含'vh'和'vh_mask'的字典
+        """
+        # 确保data是2D数组
+        if len(data.shape) == 1:
+            data = data[:, None]  # (T,) -> (T, 1)
+        
+        T = data.shape[0]
+        
+        # 提取chunk
+        end_idx = idx + self.action_sequence_length
+        extracted_data = data[idx:min(T, end_idx)]
+        
+        # 创建mask
+        mask = np.ones_like(extracted_data)
+        
+        # horizon padding
+        if extracted_data.shape[0] < self.frequency:
+            mask = np.concatenate([mask, np.zeros((self.frequency - extracted_data.shape[0], extracted_data.shape[1]))])
+            if not self.repeat_padding:
+                # 零填充
+                extracted_data = np.concatenate([extracted_data, np.zeros((self.frequency - extracted_data.shape[0], extracted_data.shape[1]))])
+            else:
+                # 重复最后一个值
+                extracted_data = np.concatenate([extracted_data, np.tile(extracted_data[-1:], (self.frequency - extracted_data.shape[0], 1))])
+        
+        return {'vh': extracted_data.astype(np.float32), 'vh_mask': mask.astype(np.bool_)}
+    
     def read_next_obs(self, datas, idx):
         end_idx = idx + self.frequency
         query_idx = min(end_idx, self.traj_len-1)
@@ -310,7 +387,7 @@ class MapStyleReader(Dataset):
         if episode_label == 0:
             # only terminal step is unsafe
             if idx >= traj_len - 10:
-                feasi = 1.0
+                feasi = 25.0
                 cost = 1
 
         return {'cost': np.array(cost, dtype=np.float32),
@@ -362,18 +439,39 @@ class MapStyleReader(Dataset):
         reward_sum = 0.0
         discount = 1.0
 
+        reward_list = []
         for t in range(idx, end_idx):
             base_vel = data[meta['action_key']][t]
             linear_v = float(base_vel[0])
 
             # step reward: encourage high speed
             r = abs(linear_v)
-
+            
+            reward_list.append(r)
             reward_sum += discount * r
             discount *= gamma
 
+        reward_array = np.array(reward_list, dtype=np.float32)
+        
+        if reward_array.shape[0] < self.frequency:
+            # Create a mask (if necessary)
+            mask = np.ones_like(reward_array)
+            mask = np.concatenate([mask, np.zeros((self.frequency - reward_array.shape[0],))])
+
+            # Zero padding or repeat padding
+            if not self.repeat_padding:
+                # Zero padding
+                reward_array = np.concatenate([reward_array, np.zeros((self.frequency - reward_array.shape[0],))])
+            else:
+                # Repeat the last value
+                reward_array = np.concatenate([reward_array, np.tile(reward_array[-1:], (self.frequency - reward_array.shape[0],))])
+        else:
+            mask = np.ones_like(reward_array)
+
         return {
-            'reward': np.array(reward_sum, dtype=np.float32) / self.frequency
+            'reward': reward_array,
+            'reward_mask': mask.astype(np.bool_),  # If you want to return the mask as well
+            'discounted_reward_sum': reward_sum / self.frequency  # If you want to return the sum as well
         }
         
     def read_chunk_cost(self, data, idx, traj_len):
@@ -426,7 +524,26 @@ class MapStyleReader(Dataset):
             **self.read_next_obs([data[key] for key in meta['observation_key']], idx),
             **self.read_next_proprio(data[meta['proprio_key']], idx, meta),
             'next_done': next_done
-        } 
+        }
+        
+        # 尝试读取QH和VH值（如果存在的话）
+        if self.qh_key and self.qh_key in data:
+            # try:
+            qh_data = self.read_qh(data[self.qh_key][()], idx)
+            item.update(qh_data)
+            # except Exception as e:
+                # print(f"Warning: Failed to read QH data from {path}: {e}")
+        else:
+            print(f"Missing {self.qh_key} in file {path}")
+        
+        if self.vh_key and self.vh_key in data:
+            # try:
+            vh_data = self.read_vh(data[self.vh_key][()], idx)
+            item.update(vh_data)
+            # except Exception as e:
+                # print(f"Warning: Failed to read VH data from {path}: {e}")
+        else:
+            print(f"Missing {self.vh_key} in file {path}")
             
         return item
 
@@ -447,6 +564,8 @@ def create_dataloader(
                  blind_mode: bool = False,
                  codebook_metas_path: str = '',
                  clip_ending: bool = False,
+                 qh_key: str = 'qh_mean_values',
+                 vh_key: str = 'vh_values',
                  **kwargs
                  ):
     dataset = MapStyleReader(
@@ -459,6 +578,8 @@ def create_dataloader(
                  blind_mode= blind_mode,
                  codebook_metas_path = codebook_metas_path,
                  clip_ending = clip_ending,
+                 qh_key = qh_key,
+                 vh_key = vh_key,
                 #  standard_freq = standard_freq,
                 #  dim_action = dim_action,
                  )

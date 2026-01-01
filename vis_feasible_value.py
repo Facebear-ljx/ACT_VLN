@@ -315,7 +315,7 @@ def main():
                     "/home/dodo/ljx/vln_data/run_circle_in_air_suboptimal", \
                     "/home/dodo/ljx/vln_data/run_in_the_circle_self_generate_1229"]:
         metas_path = "/home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_mixed_1229_450"
-        ckpt_dir = "/home/dodo/ljx/AIR3L/exp/20251231/iql_expectile09_vln_mixed_1229_450/ckpt-10000"
+        ckpt_dir = "/home/dodo/ljx/AIR3L/exp/20251231/iql_expectile09_vln_mixed_1229_450/ckpt-60000"
         exp_name = "iql_expectile09_vln_mixed_1231_450_25offset"
         
         out_root = Path("viz_path_all")

@@ -66,6 +66,7 @@ class ACTModel(nn.Module):
               num_encoder_layers: int=4,
               num_decoder_layers: int=1,
               kl_weight: float=10.,
+              weight_temperature: float=1.0,  # Temperature for advantage weighting
               *args,
               **kwargs
        ):
@@ -88,6 +89,7 @@ class ACTModel(nn.Module):
               # loss
               self.loss_fn = nn.L1Loss(reduction='none')
               self.kl_weight = kl_weight
+              self.weight_temperature = weight_temperature
               
               # vae transformer encoder
               self.ac_num = ac_num
@@ -247,7 +249,13 @@ class ACTModel(nn.Module):
               return output
        
        
-       def forward(self, qpos: torch.Tensor, image_obs: torch.Tensor, action: torch.Tensor, is_pad=None):
+       def forward(self, qpos: torch.Tensor, 
+                   image_obs: torch.Tensor,
+                   action: torch.Tensor,
+                   qh: torch.Tensor=None,
+                   vh: torch.Tensor=None,
+                   r: torch.Tensor=None,
+                   is_pad=None):
               # is_pad
               is_pad_atten = is_pad[:, :, 0]  # b, seq
               
@@ -268,14 +276,76 @@ class ACTModel(nn.Module):
               total_kld, _, _ = kl_divergence(mu, logvar)
               kl_loss = self.kl_weight * total_kld[0]
               
-              recons_loss = self.loss_fn(action, a_hat)
-              recons_loss = recons_loss * (~is_pad)
-              recons_loss = recons_loss.mean()
+              # Calculate reconstruction loss
+              recons_loss = self.loss_fn(action, a_hat)  # (B, T, A)
+              recons_loss = recons_loss * (~is_pad)  # Apply padding mask
+              
+              # Calculate weights based on (vh - qh) if available
+              if qh is not None and vh is not None:
+                     # Compute advantage: vh - qh
+                     # qh and vh should have shape (B, T, 1)
+                     advantage_h = vh - qh  # (B, T, 1)
+                     advantage_r = r[:,:,None]
+                     
+                     # Convert advantage to weights
+                     # Use exponential weighting: exp(advantage / temperature)
+                     weights_h = torch.clip(advantage_h, 0, 1) * 5  # (B, T, 1)
+                     weights_r = torch.exp(advantage_r - 0.4)  # (B, T, 1)
+                     
+                     indicator_qh = torch.where(qh <= 0, torch.tensor(1.0), torch.tensor(0.0))  # I(Q_h*(s, a) <= 0)
+                     indicator_vh = torch.where(vh <= 0, torch.tensor(1.0), torch.tensor(0.0))  # I(V_h*(s) <= 0)
+                     
+                     # Ensure weights are positive and reasonable
+                     weights_r = torch.clamp(weights_r, min=0.01, max=10.0) * indicator_qh * indicator_vh  # Clamp to reasonable range
+                     weights_h = torch.clamp(weights_h, min=0.0, max=10.0) * (1 - indicator_vh)  # Clamp to reasonable range
+                     weights = weights_h + weights_r  # You can apply a combination of both
+                     
+                     # Apply weights to reconstruction loss
+                     # Expand weights to match action dimensions if needed
+                     if weights.shape[-1] == 1 and recons_loss.shape[-1] > 1:
+                            weights = weights.expand_as(recons_loss)  # (B, T, A)
+                     
+                     # Apply weights
+                     weighted_recons_loss = recons_loss * weights
+                     recons_loss = weighted_recons_loss.mean()
+                     
+                     # Calculate statistics for vh >= 0 and corresponding qh - vh
+                     vh_positive_mask = vh >= 0  # Mask where vh >= 0
+                     positive_qh_vh_diff = (qh - vh) * vh_positive_mask  # Calculate qh - vh only where vh >= 0
+
+                     # Calculate the count of vh >= 0
+                     num_vh_positive = vh_positive_mask.sum().item()
+                     # Calculate the statistics (mean, min, max, std) for qh - vh where vh >= 0
+                     positive_qh_vh_values = positive_qh_vh_diff[vh_positive_mask.bool()]
+                     
+                     # Store weight statistics for logging
+                     statistics = {
+                            'num_vh_positive': num_vh_positive,
+                            'weights_h_mean': weights_h.mean().item(),
+                            'weights_r_mean': weights_r.mean().item(),
+                     }
+
+                     # Store weight statistics for logging
+                     weight_stats = {
+                            'avg_weight': weights.mean().item(),
+                            'min_weight': weights.min().item(),
+                            'max_weight': weights.max().item(),
+                            'avg_advantage_h': advantage_h.mean().item(),
+                            'avg_advantage_r': advantage_r.mean().item(),
+                            **statistics  # Add the vh >= 0 statistics
+                     }
+              else:
+                     # Standard unweighted loss
+                     print("="*88)
+                     print("not use qh and vh")
+                     recons_loss = recons_loss.mean()
+                     weight_stats = {}
               
               loss = recons_loss + kl_loss
               loss_dict = {"policy_loss": loss,
                            "recons_loss": recons_loss,
-                           "kl_loss": kl_loss}
+                           "kl_loss": kl_loss,
+                           **weight_stats}  # Add weight statistics to loss dict
               return loss_dict
 
        @torch.no_grad

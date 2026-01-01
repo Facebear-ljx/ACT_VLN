@@ -82,28 +82,28 @@ def match_episode_to_hdf5(episode_info, hdf5_files):
         str or None: 匹配的hdf5文件路径
     """
     episode_num = episode_info['episode_num']
+    task_name = episode_info['episode_name'].split('/')[0]  # Extract task name like 'run_circle_in_air'
     
     if episode_num is None:
         return None
     
-    # 尝试多种匹配策略
-    for hdf5_file in hdf5_files:
-        hdf5_basename = os.path.basename(hdf5_file)
-        
-        # 策略1: 文件名包含相同的数字
-        if str(episode_num) in hdf5_basename:
-            return hdf5_file
-        
-        # 策略2: 提取hdf5文件名中的数字进行匹配
-        hdf5_numbers = re.findall(r'\d+', hdf5_basename)
-        if str(episode_num) in hdf5_numbers:
-            return hdf5_file
+    # 生成用于匹配的字符串
+    episode_pattern = f"episode_{episode_num}"
     
+    for hdf5_file in hdf5_files:
+        hdf5_basename = os.path.basename(hdf5_file).split(".hdf5")[0]
+        
+        # 只匹配任务名和精确的episode数字
+        if task_name.lower() == hdf5_basename.lower() and episode_pattern == hdf5_basename:
+            return hdf5_file
+        
     # 如果没有精确匹配，返回第一个文件（如果只有一个的话）
     if len(hdf5_files) == 1:
         return hdf5_files[0]
     
     return None
+
+
 
 
 def write_qh_vh_to_hdf5(hdf5_file, qh_mean, vh, qh_key='qh_mean_values', vh_key='vh_values'):
