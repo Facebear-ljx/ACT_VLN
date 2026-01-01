@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 
+import argparse
 import h5py
 import cv2
 import numpy as np
@@ -139,8 +140,8 @@ def load_models(ckpt_dir, proprio_dim=2, action_dim=2, hidden_dim=256, pretraine
 
     qh_eval = accelerator.unwrap_model(qh).eval().to(device)
     vh_eval = accelerator.unwrap_model(vh).eval().to(device)
-    accelerator.load_state(ckpt_dir)
-    return accelerator, accelerator.unwrap_model(qh).eval(), accelerator.unwrap_model(vh).eval()
+    
+    return accelerator, qh_eval, vh_eval
 
 
 
@@ -215,6 +216,42 @@ def overlay_text(
     return img
 
 
+def write_qh_vh_to_hdf5(hdf5_file, qh, vh, qh_key='qh_values', vh_key='vh_values'):
+    """
+    将qh和vh值写入hdf5文件
+    
+    Args:
+        hdf5_file: hdf5文件路径
+        qh_mean: qh_mean数组
+        vh: vh数组
+        qh_key: qh_mean在hdf5中的key名称
+        vh_key: vh在hdf5中的key名称
+    """
+    try:
+        with h5py.File(hdf5_file, 'a') as f:  # 'a'模式：如果文件存在则追加，不存在则创建
+            # 如果key已存在，先删除
+            if qh_key in f:
+                del f[qh_key]
+            if vh_key in f:
+                del f[vh_key]
+            
+            # 写入新数据
+            f.create_dataset(qh_key, data=qh, compression='gzip')
+            f.create_dataset(vh_key, data=vh, compression='gzip')
+            
+            # 添加元数据
+            f.attrs[f'{qh_key}_shape'] = qh.shape
+            f.attrs[f'{vh_key}_shape'] = vh.shape
+            f.attrs[f'{qh_key}_mean'] = float(qh.mean())
+            f.attrs[f'{vh_key}_mean'] = float(vh.mean())
+            
+        return True
+        
+    except Exception as e:
+        print(f"Error writing to {hdf5_file}: {e}")
+        return False
+
+
 # ============================================================
 # Episode processing
 # ============================================================
@@ -232,6 +269,8 @@ def process_one_episode(
     qh,
     vh,
     fps,
+    qh_key,
+    vh_key,
 ):
     rel_ep = Path(ep_path).relative_to(data_root).with_suffix("")
 
@@ -301,6 +340,7 @@ def process_one_episode(
     np.save(out_dir / "vh.npy", vh_arr)
     plot_qh_vh_curves(qh_arr, vh_arr, out_dir)   # ⭐ 新增
 
+    write_qh_vh_to_hdf5(ep_path, qh_arr, vh_arr, qh_key=qh_key, vh_key=vh_key)
 
     print(f"[OK] {out_dir}")
 
@@ -309,36 +349,135 @@ def process_one_episode(
 # Main
 # ============================================================
 
+def get_args_parser():
+    parser = argparse.ArgumentParser('Visualize Feasible Value', add_help=False)
+    
+    # Data paths
+    parser.add_argument('--data_roots', nargs='+', 
+                        default=['/home/dodo/ljx/vln_data/run_in_the_circle_self_generate',
+                                '/home/dodo/ljx/vln_data/run_circle_in_air',
+                                '/home/dodo/ljx/vln_data/run_circle_in_air_suboptimal',
+                                '/home/dodo/ljx/vln_data/run_in_the_circle_self_generate_1229'],
+                        help='List of data root directories to process')
+    
+    parser.add_argument('--metas_path', 
+                        default='/home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_mixed_1229_450',
+                        help='Path to meta files directory')
+    
+    parser.add_argument('--ckpt_dir', 
+                        default='/home/dodo/ljx/AIR3L/exp/20251231/iql_expectile09_vln_mixed_1229_450/ckpt-60000',
+                        help='Path to checkpoint directory')
+    
+    parser.add_argument('--exp_name', 
+                        default='iql_expectile09_vln_mixed_1231_450_25offset',
+                        help='Experiment name for output organization')
+    
+    # Output settings
+    parser.add_argument('--out_root', 
+                        default='viz_path_all',
+                        help='Root directory for output files')
+    
+    # Model parameters
+    parser.add_argument('--proprio_dim', default=2, type=int,
+                        help='Proprioception dimension')
+    parser.add_argument('--action_dim', default=2, type=int,
+                        help='Action dimension')
+    parser.add_argument('--hidden_dim', default=256, type=int,
+                        help='Hidden dimension for models')
+    parser.add_argument('--pretrained_vision', action='store_true',
+                        help='Use pretrained vision encoder')
+    
+    # Video settings
+    parser.add_argument('--fps', default=10, type=int,
+                        help='Frames per second for output videos')
+    
+    # HDF5 keys for storing QH/VH values
+    parser.add_argument('--qh_key', 
+                        default='test/qh_values',
+                        help='Key name for storing QH mean values in HDF5 files')
+    
+    parser.add_argument('--vh_key', 
+                        default='test/vh_values',
+                        help='Key name for storing VH values in HDF5 files')
+    
+    return parser
+
+
 def main():
-    for data_root in ['/home/dodo/ljx/vln_data/run_in_the_circle_self_generate', \
-                    "/home/dodo/ljx/vln_data/run_circle_in_air", \
-                    "/home/dodo/ljx/vln_data/run_circle_in_air_suboptimal", \
-                    "/home/dodo/ljx/vln_data/run_in_the_circle_self_generate_1229"]:
-        metas_path = "/home/dodo/ljx/AIR3L/meta_files/1ViewData/vln_mixed_1229_450"
-        ckpt_dir = "/home/dodo/ljx/AIR3L/exp/20251231/iql_expectile09_vln_mixed_1229_450/ckpt-60000"
-        exp_name = "iql_expectile09_vln_mixed_1231_450_25offset"
-        
-        out_root = Path("viz_path_all")
+    parser = argparse.ArgumentParser('Visualize Feasible Value', parents=[get_args_parser()])
+    args = parser.parse_args()
+    
+    print("Visualize Feasible Value Script")
+    print("=" * 50)
+    print(f"Data roots: {args.data_roots}")
+    print(f"Metas path: {args.metas_path}")
+    print(f"Checkpoint dir: {args.ckpt_dir}")
+    print(f"Experiment name: {args.exp_name}")
+    print(f"Output root: {args.out_root}")
+    print("=" * 50)
+    
+    out_root = Path(args.out_root)
+    ckpt_name = Path(args.ckpt_dir).name
+    
+    # Load models once
+    print("Loading models...")
+    metas = load_all_metas(args.metas_path)
+    accelerator, qh, vh = load_models(
+        args.ckpt_dir, 
+        args.proprio_dim, 
+        args.action_dim, 
+        args.hidden_dim, 
+        args.pretrained_vision
+    )
+    print("Models loaded successfully!")
+    
+    # Process each data root
+    for data_root in args.data_roots:
+        if not os.path.exists(data_root):
+            print(f"Warning: Data root {data_root} does not exist, skipping...")
+            continue
+            
         task_name = Path(data_root).name
-        ckpt_name = Path(ckpt_dir).name
-
-        metas = load_all_metas(metas_path)
-        accelerator, qh, vh = load_models(ckpt_dir)
-
-        for ep in sorted(Path(data_root).rglob("*.hdf5")):
-            process_one_episode(
-                str(ep),
-                data_root,
-                out_root,
-                exp_name,
-                ckpt_name,
-                task_name,
-                metas,
-                accelerator,
-                qh,
-                vh,
-                fps=10,
-            )
+        print(f"\nProcessing task: {task_name}")
+        print(f"Data root: {data_root}")
+        
+        # Find all episodes
+        episodes = sorted(Path(data_root).rglob("*.hdf5"))
+        
+        # if args.max_episodes:
+            # episodes = episodes[:args.max_episodes]
+            # print(f"Limited to {args.max_episodes} episodes")
+        
+        print(f"Found {len(episodes)} episodes to process")
+        
+        # Process each episode
+        for i, ep in enumerate(episodes):
+            print(f"Processing episode {i+1}/{len(episodes)}: {ep.name}")
+            try:
+                process_one_episode(
+                    str(ep),
+                    data_root,
+                    out_root,
+                    args.exp_name,
+                    ckpt_name,
+                    task_name,
+                    metas,
+                    accelerator,
+                    qh,
+                    vh,
+                    fps=args.fps,
+                    qh_key=args.qh_key,
+                    vh_key=args.vh_key,
+                )
+            except Exception as e:
+                print(f"Error processing {ep}: {e}")
+                continue
+        
+        print(f"Completed task: {task_name}")
+    
+    print("\n" + "=" * 50)
+    print("All tasks completed!")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
