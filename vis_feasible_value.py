@@ -240,10 +240,10 @@ def write_qh_vh_to_hdf5(hdf5_file, qh, vh, qh_key='qh_values', vh_key='vh_values
             f.create_dataset(vh_key, data=vh, compression='gzip')
             
             # 添加元数据
-            f.attrs[f'{qh_key}_shape'] = qh.shape
-            f.attrs[f'{vh_key}_shape'] = vh.shape
-            f.attrs[f'{qh_key}_mean'] = float(qh.mean())
-            f.attrs[f'{vh_key}_mean'] = float(vh.mean())
+            # f.attrs[f'{qh_key}_shape'] = qh.shape
+            # f.attrs[f'{vh_key}_shape'] = vh.shape
+            # f.attrs[f'{qh_key}_mean'] = float(qh.mean())
+            # f.attrs[f'{vh_key}_mean'] = float(vh.mean())
             
         return True
         

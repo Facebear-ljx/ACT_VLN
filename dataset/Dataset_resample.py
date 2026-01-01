@@ -533,8 +533,8 @@ class MapStyleReader(Dataset):
             item.update(qh_data)
             # except Exception as e:
                 # print(f"Warning: Failed to read QH data from {path}: {e}")
-        else:
-            print(f"Missing {self.qh_key} in file {path}")
+        # else:
+            # print(f"Missing {self.qh_key} in file {path}")
         
         if self.vh_key and self.vh_key in data:
             # try:
@@ -542,8 +542,8 @@ class MapStyleReader(Dataset):
             item.update(vh_data)
             # except Exception as e:
                 # print(f"Warning: Failed to read VH data from {path}: {e}")
-        else:
-            print(f"Missing {self.vh_key} in file {path}")
+        # else:
+            # print(f"Missing {self.vh_key} in file {path}")
             
         return item
 
@@ -564,8 +564,8 @@ def create_dataloader(
                  blind_mode: bool = False,
                  codebook_metas_path: str = '',
                  clip_ending: bool = False,
-                 qh_key: str = 'qh_mean_values',
-                 vh_key: str = 'vh_values',
+                 qh_key: str = None,
+                 vh_key: str = None,
                  **kwargs
                  ):
     dataset = MapStyleReader(

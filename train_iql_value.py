@@ -151,7 +151,7 @@ def get_args_parser():
     p.add_argument("--resume", default=None, type=str)
 
     # optimization
-    p.add_argument("--batch_size", default=64, type=int)
+    p.add_argument("--batch_size", default=32, type=int)
     p.add_argument("--lr_q", default=3e-4, type=float)
     p.add_argument("--lr_v", default=3e-4, type=float)
     p.add_argument("--weight_decay", default=0.01, type=float)
@@ -331,38 +331,6 @@ def main(args):
             # Unpack
             # --------
             img, pro, act, rew, cos, done, nimg, npro = to_state_tensors(batch, device=device)
-
-            
-            # # Reward value update
-            # # --------
-            # # Update V (expectile regression to Q_min(s,a) target)
-            # # diff = q_min_tgt(s,a) - v(s)
-            # # --------
-            # with torch.no_grad():
-            #     q_min = q_tgt.min(img, pro, act)
-
-            # v_pred = v(img, pro)
-            # diff = q_min - v_pred
-            # v_loss = expectile_loss(diff, args.expectile_v)
-
-            # v_opt.zero_grad(set_to_none=True)
-            # accelerator.backward(v_loss)
-            # v_opt.step()
-            
-            # # --------
-            # # Update Q (TD regression to V_target(s'))
-            # # target = r + gamma * (1-done) * V_tgt(s')
-            # # --------
-            # with torch.no_grad():
-            #     v_next = v(nimg, npro)
-            #     target_q = rew + (args.gamma ** args.max_freq) * v_next
-
-            # q1, q2 = q(img, pro, act)
-            # q_loss = F.mse_loss(q1, target_q) + F.mse_loss(q2, target_q)
-
-            # q_opt.zero_grad(set_to_none=True)
-            # accelerator.backward(q_loss)
-            # q_opt.step()
 
             # Feasible value update
             with torch.no_grad():

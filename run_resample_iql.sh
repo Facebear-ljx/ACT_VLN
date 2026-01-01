@@ -13,7 +13,7 @@ export WANDB_BASE_URL=https://api.bandw.top
 torchrun --nproc-per-node=2 --nnodes=1 --node-rank=0 --master-addr=localhost --master-port=$port train_iql_value.py \
   --epochs 3000 \
   --batch_size 32 \
-  --precision bf16 \
+  --precision no \
   --lr_q 3e-4 \
   --lr_v 3e-4 \
   --weight_decay 1e-4 \
@@ -22,7 +22,7 @@ torchrun --nproc-per-node=2 --nnodes=1 --node-rank=0 --master-addr=localhost --m
   --expectile_vc 0.9 \
   --ema_tau 0.995 \
   --action_norm mean-std \
-  --max_freq 10 \
+  --max_freq 1 \
   --save_interval 10000 \
   --log_interval 10 \
   --output_dir /home/dodo/ljx/AIR3L/exp/20251228/iql_vln_feasible \
