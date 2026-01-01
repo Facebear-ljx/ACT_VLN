@@ -103,21 +103,24 @@ def main(args):
             torch.distributed.barrier()
             
             #### training
-            inputs = {
-                'image_obs': data['image_input'].cuda(non_blocking=True),
-                'action': data['action'].cuda(non_blocking=True),
-                'qpos': data['proprio'].cuda(non_blocking=True),
-                'qh': data['qh'].cuda(non_blocking=True),
-                'vh': data['vh'].cuda(non_blocking=True),
-                'r': data['reward'].cuda(non_blocking=True),
-                # 'qh_mask': data['qh_mask'].cuda(non_blocking=True),
-                # 'vh_mask': data['vh_mask'].cuda(non_blocking=True),
-                'is_pad': ~data['action_mask'].cuda(),
-            }
-            # print('imag:',  data['image_input'].shape)
-            # print('action:',  data['action'].shape)
-            # print('qpos:', data['proprio'].shape)
-            # print('is_pad:', data['action_mask'].shape) 
+            try:
+                inputs = {
+                    'image_obs': data['image_input'].cuda(non_blocking=True),
+                    'action': data['action'].cuda(non_blocking=True),
+                    'qpos': data['proprio'].cuda(non_blocking=True),
+                    'qh': data['qh'].cuda(non_blocking=True),
+                    'vh': data['vh'].cuda(non_blocking=True),
+                    'r': data['reward'].cuda(non_blocking=True),
+                    'is_pad': ~data['action_mask'].cuda(),
+                }
+            except:
+                inputs = {
+                    'image_obs': data['image_input'].cuda(non_blocking=True),
+                    'action': data['action'].cuda(non_blocking=True),
+                    'qpos': data['proprio'].cuda(non_blocking=True),
+                    'r': data['reward'].cuda(non_blocking=True),
+                    'is_pad': ~data['action_mask'].cuda(),
+                }                
             optim.zero_grad()
             loss = model(**inputs)
             accelerator.backward(loss['policy_loss'])
